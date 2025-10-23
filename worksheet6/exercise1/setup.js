@@ -15,9 +15,11 @@ function render(device, context, pipeline, bindGroup, timingHelper, gpuTime) {
     pass.draw(4);
     pass.end();
     device.queue.submit([encoder.finish()]);
+    timingHelper.getResult().then( time => { 
+        gpuTime = time/1000; 
+    });
 
-    timingHelper.getResult().then( time => { gpuTime = time/1000; });
-    console.log(`GPU time: ${gpuTime} ms`);
+    return gpuTime;
 }
 
 async function load_texture(device, filename) { 
@@ -293,7 +295,9 @@ async function main(){
     function animate() {
         device.queue.writeBuffer(uniformBuffer, 0, uniforms);
         device.queue.writeBuffer(jitterBuffer, 0, jitter);
-        render(device, context, pipeline, bindGroup, timingHelper, gpuTime);
+        requestAnimationFrame(animate);
+        gpuTime = render(device, context, pipeline, bindGroup, timingHelper, gpuTime);
     }
     animate();
+    document.getElementById("stats").value = `Rendering time: ${gpuTime.toFixed(2)} ms`
 }
