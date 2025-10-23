@@ -1,0 +1,10 @@
+@vertex
+fn main_vs(@builtin(vertex_index) VertexIndex : u32) -> @builtin(position) vec4f {
+    const pos = array<vec2f, 4>(vec2f(-0.9, 0.9), vec2f(-0.9, -0.9), vec2f(0.9, 0.9), vec2f(0.9, -0.9));
+    return vec4f(pos[VertexIndex], 0.0, 1.0);
+}
+    
+@fragment
+fn main_fs() -> @location(0) vec4f {
+    return vec4f(0.1, 0.3, 0.6, 1.0);
+}

@@ -1,0 +1,42 @@
+<!doctype html>
+
+<html>
+    <head>
+        <meta charset="utf-8">
+        <title>Worksheet 5 - Task 2</title>
+        <link rel="stylesheet" href="style.css">
+        <script id="wgsl" type="x-shader" src="shaders.wgsl"></script>
+        <script type="text/javascript" src="setup.js"></script>
+        <script type="text/javascript" src="..\MV.js"></script>
+        <script type="text/javascript" src="..\OBJParser.js"></script>
+    </head>
+    <body>
+        <div class="container">
+            <canvas id="webgpu-canvas" width="800" height="450"></canvas>
+            <div class="controls" style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5em; align-items: center; max-width: 480px; margin-top: 1.5em;">
+                <label for="matt-shader-select">Matt Shader:</label>
+                <select id="matt-shader-select">
+                    <option value="0">Base Color</option>
+                    <option value="1" selected="selected">Directional</option>
+                    <option value="2">Lambertian</option>
+                </select>
+                <label for="repeat-select">Repeat:</label>
+                <select id="repeat-select">
+                    <option value="0" selected="selected">Repeat</option>
+                    <option value="1">Clamp-to-edge</option>
+                </select>
+                <label for="filtering-select">Filtering:</label>
+                <select id="filtering-select">
+                    <option value="0">Nearest</option>
+                    <option value="1" selected="selected" >Linear</option>
+                </select>
+                <label for="texture-enable">Enable Plane Texture:</label>
+                <input type="checkbox" id="texture-enable" checked>
+                <label for="subdiv-selector">Subdivisions:</label>
+                <input type="range" id="subdiv-selector" min="0" max="10" value="0" />
+                <label for="texture-scale-input">Texture Scale:</label>
+                <input type="range" id="texture-scale-input" min="0.01" max="1" step="0.01" value="0.01" />
+            </div>
+        </div>
+    </body>
+</html>
