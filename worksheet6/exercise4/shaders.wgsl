@@ -362,8 +362,10 @@ fn sample_area_lights(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec
 }
 // Shade functions
 fn area_lights(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3f {
-    // sample_area_lights already returns reflected radiance (BRDF * E * cos), so return it directly
-    return sample_area_lights(r, hit);
+    // Include the surface emission so emissive triangles render as light sources
+    // even when shading themselves. sample_area_lights returns only the
+    // reflected contribution from other emissive triangles.
+    return (*hit).emission + sample_area_lights(r, hit);
 }
 fn directional_light(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3f {
     let pi = 3.14159;
