@@ -71,19 +71,13 @@ struct Attribs {
 };
 
 // Bindings from JS
-
-// Basic info
 @group(0) @binding(0) var<uniform> uniforms : Uniforms;
-// Anti-alias
 @group(0) @binding(1) var<storage> jitter: array<vec2f>;
-// Mesh data
 @group(0) @binding(2) var<storage> attributes: array<Attribs>;
 @group(0) @binding(3) var<storage> meshFaces: array<vec4u>; // v0,v1,v2,mat
-// Material indices: one u32 per triangle
 @group(0) @binding(4) var<uniform> aabb : Aabb;
-// BSP tree buffers (produced by build_bsp_tree)
 @group(0) @binding(5) var<storage> materials: array<Material>;
-@group(0) @binding(6) var<storage> bspTree: array<u32>; // node*4 layout
+@group(0) @binding(6) var<storage> bspTree: array<vec4u>;
 @group(0) @binding(7) var<storage> bspPlanes: array<f32>;
 @group(0) @binding(8) var<storage> treeIds: array<u32>;
 @group(0) @binding(9) var<storage> lightIndices: array<u32>;
@@ -203,62 +197,67 @@ fn intersect_sphere(r: Ray, hit: ptr<function, HitInfo>, center: vec3f, radius: 
 
     return true;
 }
-fn intersect_trimesh(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> bool{
+fn intersect_trimesh(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> bool {
     var branch_lvl = 0u;
     var near_node = 0u;
     var far_node = 0u;
     var t = 0.0f;
     var node = 0u;
-    for(var i = 0u; i <= MAX_LEVEL; i++) {
-        let nodeBase = node * 4u;
-        let nodeInfo = bspTree[nodeBase];
-        let node_axis_leaf = nodeInfo & 3u;
-        if(node_axis_leaf == BSP_LEAF) {
+    
+    for (var i = 0u; i <= MAX_LEVEL; i = i + 1u) {
+        let tree_node = bspTree[node];
+        let node_axis_leaf = tree_node.x & 3u;
+        
+        if (node_axis_leaf == BSP_LEAF) {
             // A leaf was found
-            let node_count = nodeInfo >> 2u;
-            let node_id = bspTree[nodeBase + 1u];
-            var found = false;
-            for (var j = 0u; j < node_count; j++) {
+            let node_count = tree_node.x >> 2u;
+            let node_id = tree_node.y;
+            
+            for (var j = 0u; j < node_count; j = j + 1u) {
                 let obj_idx = treeIds[node_id + j];
-                if (intersect_triangle(*r, hit, obj_idx)) {
-                    r.tmax = hit.dist;
-                    found = true;
+                if (intersect_triangle((*r), hit, obj_idx)) {
+                    (*r).tmax = (*hit).dist;
+                    return true;
                 }
             }
-            if (found) { return true; }
-            else if (branch_lvl == 0u) { return false; }
-            else {
+            
+            if (branch_lvl == 0u) {
+                return false;
+            } else {
                 branch_lvl = branch_lvl - 1u;
                 i = branch_node[branch_lvl].x;
                 node = branch_node[branch_lvl].y;
-                // r.tmin = branch_ray[branch_lvl].x;
-                // r.tmax = branch_ray[branch_lvl].y;
+                (*r).tmin = branch_ray[branch_lvl].x;
+                (*r).tmax = branch_ray[branch_lvl].y;
                 continue;
             }
         }
-        let left = bspTree[nodeBase + 2u];
-        let right = bspTree[nodeBase + 3u];
-        let axis_direction = r.direction[node_axis_leaf];
-        let axis_origin = r.origin[node_axis_leaf];
-        if(axis_direction >= 0.0f) {
-            near_node = left;
-            far_node = right;
+        
+        let axis_direction = (*r).direction[node_axis_leaf];
+        let axis_origin = (*r).origin[node_axis_leaf];
+        
+        if (axis_direction >= 0.0f) {
+            near_node = tree_node.z; // left
+            far_node = tree_node.w; // right
         } else {
-            near_node = right;
-            far_node = left;
+            near_node = tree_node.w; // right
+            far_node = tree_node.z; // left
         }
         let node_plane = bspPlanes[node];
         let denom = select(axis_direction, 1.0e-8f, abs(axis_direction) < 1.0e-8f);
-        t = (node_plane - axis_origin)/denom;
-        if(t > r.tmax) { node = near_node; }
-        else if(t < r.tmin) { node = far_node; }
-        else {
+        t = (node_plane - axis_origin) / denom;
+        
+        if (t > (*r).tmax) {
+            node = near_node;
+        } else if (t < (*r).tmin) {
+            node = far_node;
+        } else {
             branch_node[branch_lvl].x = i;
             branch_node[branch_lvl].y = far_node;
             branch_ray[branch_lvl].x = t;
-            branch_ray[branch_lvl].y = r.tmax;
+            branch_ray[branch_lvl].y = (*r).tmax;
             branch_lvl = branch_lvl + 1u;
-            // r.tmax = t;
+            (*r).tmax = t;
             node = near_node;
         }
     }
@@ -266,16 +265,13 @@ fn intersect_trimesh(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> bool
 }
 // Top-level scene intersection: AABB culling + trimesh traversal
 fn intersect_scene(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> bool {
-    if (!intersect_min_max(r)) { return false; }
-    intersect_trimesh(r, hit);
     
     // left sphere
     let left_sphere_center = vec3f(420.0, 90.0, 370.0);
     let left_sphere_radius = 90.0;
     if intersect_sphere(*r, hit, left_sphere_center, left_sphere_radius) {
         (*hit).shader = 4; // mirror
-        (*hit).emission = vec3f(0.0, 0.0, 0.0);
-        (*hit).color = vec3f(0.0, 0.0, 0.0);
+        return true;
     };
 
     // right sphere
@@ -284,10 +280,12 @@ fn intersect_scene(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> bool {
     if intersect_sphere(*r, hit, right_sphere_center, right_sphere_radius) {
         (*hit).shader = 5; // glass
         (*hit).iof = 1.5;
-        (*hit).emission = vec3f(0.0, 0.0, 0.0);
-        (*hit).color = vec3f(0.0, 0.0, 0.0);
+        return true;
     };
 
+    if (intersect_min_max(r)) {
+        return intersect_trimesh(r, hit);
+    }
 
     return hit.has_hit;
 }
@@ -582,7 +580,8 @@ fn main_vs(@builtin(vertex_index) VertexIndex : u32) -> VSOut {
 
 @fragment
 fn main_fs(@location(0) coords: vec2f) -> @location(0) vec4f {
-    const bgcolor = vec4f(0.1, 0.3, 0.6, 1.0);
+    // const bgcolor = vec4f(0.1, 0.3, 0.6, 0.0);
+    const bgcolor = vec4f(0.0);
     const max_depth = 10;
     var result = vec3f(0.0);
     var n_samples = i32(uniforms.subdivs * uniforms.subdivs);
