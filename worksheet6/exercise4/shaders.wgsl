@@ -308,7 +308,7 @@ fn sample_area_lights(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec
     if (nLights == 0u) { return sum; }
 
     let Nsurf = normalize((*hit).normal);
-    let eps = 1.0;
+    let eps = 0.1;
     // Loop over emissive triangles
     for (var li = 0u; li < nLights; li = li + 1u) {
         let triIndex = lightIndices[li];
@@ -385,7 +385,7 @@ fn directional_light(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3
 }
 fn lambertian(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3f {
     let light = sample_point_light((*hit).position);
-    let eps = 1.0;
+    let eps = 0.1;
     let N = normalize((*hit).normal);
     var shadow_origin = (*hit).position + N * eps;
     var shadow = Ray(shadow_origin, light.w_i, eps, max(light.dist - eps, eps));
@@ -407,46 +407,32 @@ fn lambertian(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3f {
 }
 fn mirror(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3f {
 
-    (*hit).continue_path = true;
     (*hit).has_hit = false;
-    // compute reflected direction and offset origin a tiny bit along the new ray
-    let eps = 1.0;
-    let reflDir = normalize(reflect(normalize((*r).direction), normalize((*hit).normal)));
-    (*r).direction = reflDir;
-    (*r).origin = (*hit).position + reflDir * eps;
-    (*r).tmin = eps;
-    (*r).tmax = 1000.0;
+    (*r).direction = normalize(reflect(normalize((*r).direction), normalize((*hit).normal)));
+    (*r).origin = (*hit).position;
+    (*r).tmin = 1.0;
+    (*r).tmax = 1e9;
 
     return vec3f(0.0);
 }
 fn refract_shader(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3f {
+    let d = (*r).direction;
+    let n = (*hit).normal;
     let n_air = 1.0;
-    let n_glass = 1.5;
-    let N = normalize((*hit).normal);
-    let V = normalize((*r).direction);
+    let n_medium = (*hit).iof;
 
-    // Determine if entering or exiting
-    var normal = N;
-    var n1 = n_air;
-    var n2 = n_glass;
+    let entering = dot(d, n) <= 0.0;
 
-    let dir_vector = dot(V, N);
-    if (dir_vector > 0.0) {
-        // swap indices and flip normal
-        normal = -N;
-        n1 = n_glass;
-        n2 = n_air;
-    }
-    let eta = n1 / n2;
-    let refracted = refract(V, normal, eta);
-    let eps = 1.0;
-    (*hit).continue_path = true;
+    let N = select(-n, n, entering);
+    let eta = select(n_medium / n_air, n_air / n_medium, entering);
+
+    let refracted = normalize(refract(d, N, eta));
     (*r).direction = refracted;
-    (*r).origin = (*hit).position + refracted * eps;
-    (*r).tmin = eps;
-    (*r).tmax = 1000.0;
-    (*hit).iof = n2;
-
+    (*r).origin = (*hit).position + refracted * 1e-4;
+    (*r).tmin = 0.1;
+    (*r).tmax = 1e9;
+    (*hit).has_hit = false;
+    
     return vec3f(0.0);
 }
 fn phong(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3f {
@@ -582,8 +568,7 @@ fn main_vs(@builtin(vertex_index) VertexIndex : u32) -> VSOut {
 
 @fragment
 fn main_fs(@location(0) coords: vec2f) -> @location(0) vec4f {
-    // const bgcolor = vec4f(0.1, 0.3, 0.6, 0.0);
-    const bgcolor = vec4f(0.0);
+    const bgcolor = vec4f(0.1, 0.3, 0.6, 1.0);
     const max_depth = 10;
     var result = vec3f(0.0);
     var n_samples = i32(uniforms.subdivs * uniforms.subdivs);
