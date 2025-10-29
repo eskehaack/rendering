@@ -71,7 +71,7 @@ async function main(){
     });
 
     // import obj file
-    const obj_filename = '../objects/CornellBoxWithBlocks.obj';
+    const obj_filename = '../../helper_functions/objects/CornellBoxWithBlocks.obj';
     const obj = await readOBJFile(obj_filename, 1, true); // file name, scale, ccw vertices
 
     const positionBuffer = device.createBuffer({

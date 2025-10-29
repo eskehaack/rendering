@@ -83,7 +83,7 @@ async function main(){
     });
 
     // import obj file
-    const obj_filename = '../objects/bunny.obj';
+    const obj_filename = '../../helper_functions/objects/bunny.obj';
     const obj = await readOBJFile(obj_filename, 1, true); // file name, scale, ccw vertices
     var bspBuffers = {};
     bspBuffers = build_bsp_tree(obj, device, bspBuffers);

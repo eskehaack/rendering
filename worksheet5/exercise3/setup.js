@@ -71,7 +71,7 @@ async function main(){
     });
 
     // import obj file
-    const obj_filename = '../objects/teapot.obj';
+    const obj_filename = '../../helper_functions/objects/teapot.obj';
     const obj = await readOBJFile(obj_filename, 1, true); // file name, scale, ccw vertices
 
     const positionBuffer = device.createBuffer({
@@ -108,7 +108,7 @@ async function main(){
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
-    let texture = await load_texture(device, "./grass.jpg")
+    let texture = await load_texture(device, "./../../helper_functions/grass.jpg")
 
     let jitter = new Float32Array(200); // allowing subdivs from 1 to 10 
     const jitterBuffer = device.createBuffer({ 

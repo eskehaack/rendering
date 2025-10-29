@@ -72,7 +72,7 @@ async function main(){
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
-    let texture = await load_texture(device, "./grass.jpg")
+    let texture = await load_texture(device, "./../../helper_functions/grass.jpg")
     const bindGroup = device.createBindGroup({
         layout: pipeline.getBindGroupLayout(0),
         entries: [
