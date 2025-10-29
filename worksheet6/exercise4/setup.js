@@ -1,7 +1,7 @@
 "use strict";
 window.onload = function() { main(); }
 
-function render(device, context, pipeline, bindGroup, timingHelper, gpuTime) {
+async function render(device, context, pipeline, bindGroup, timingHelper, gpuTime) {
     const encoder = device.createCommandEncoder();
     const pass = timingHelper.beginRenderPass(encoder, {
         colorAttachments: [{
@@ -15,9 +15,8 @@ function render(device, context, pipeline, bindGroup, timingHelper, gpuTime) {
     pass.draw(4);
     pass.end();
     device.queue.submit([encoder.finish()]);
-    timingHelper.getResult().then( time => { 
-        gpuTime = time/1000; 
-    });
+    const time = await timingHelper.getResult();
+    gpuTime = time / 1000;
 
     return gpuTime;
 }
@@ -289,12 +288,14 @@ async function main(){
         new Float32Array(uniforms, 8, 1).set([gamma]);
         requestAnimationFrame(animate);
     });
-    function animate() {
+    async function animate() {
         device.queue.writeBuffer(uniformBuffer, 0, uniforms);
         device.queue.writeBuffer(jitterBuffer, 0, jitter);
-        gpuTime = render(device, context, pipeline, bindGroup, timingHelper, gpuTime);
+        (async () => {
+            gpuTime = await render(device, context, pipeline, bindGroup, timingHelper, gpuTime);
+            document.getElementById("stats").value = `Rendering time: ${gpuTime.toFixed(2)} μs`;
+        })();
     }
     requestAnimationFrame(animate);
     animate();
-    document.getElementById("stats").value = `Rendering time: ${gpuTime.toFixed(2)} ms`
 }
