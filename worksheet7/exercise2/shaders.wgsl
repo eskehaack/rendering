@@ -196,7 +196,7 @@ fn intersect_sphere(r: Ray, hit: ptr<function, HitInfo>, center: vec3f, radius: 
     return true;
 }
 fn intersect_trimesh(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> bool {
-var branch_lvl = 0u;
+    var branch_lvl = 0u;
     var near_node = 0u;
     var far_node = 0u;
     var t = 0.0f;
