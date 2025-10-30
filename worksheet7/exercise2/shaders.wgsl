@@ -284,73 +284,86 @@ fn sample_point_light(pos: vec3f) -> Light {
     );
     return light;
 }
-// Sum radiometric contributions from emissive triangles (lightIndices).
-fn sample_area_lights(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3f {
+fn sample_area_lights(r: ptr<function, Ray>, hit: ptr<function, HitInfo>, seed: ptr<function, u32>) -> vec3f {
     var sum = vec3f(0.0);
     let nLights = arrayLength(&lightIndices);
     if (nLights == 0u) { return sum; }
 
     let Nsurf = normalize((*hit).normal);
-    let eps = 0.1;
-    // Loop over emissive triangles
-    for (var li = 0u; li < nLights; li = li + 1u) {
-        let triIndex = lightIndices[li];
-        let idx = meshFaces[triIndex];
-        let triangle_v = array<vec3f, 3>(
-            attributes[idx.x].position.xyz,
-            attributes[idx.y].position.xyz,
-            attributes[idx.z].position.xyz
-        );
+    let eps = 1e-4;
 
-        let e0 = triangle_v[1] - triangle_v[0];
-        let e1 = triangle_v[2] - triangle_v[0];
-        let normal = normalize(cross(e0, e1));
-        let area = 0.5 * length(cross(e0, e1));
+    // Monte‑Carlo: pick one emitting triangle uniformly, then sample a point on that triangle
+    // 1) choose triangle index
+    let rnd_tri_f = rnd(seed); // in [0,1)
+    var li = u32(floor(rnd_tri_f * f32(nLights)));
+    li = min(li, nLights - 1u); // safety
 
-        let centroid = (triangle_v[0] + triangle_v[1] + triangle_v[2]) * (1.0 / 3.0);
-        let toLight = centroid - (*hit).position;
+    let triIndex = lightIndices[li];
+    let face = meshFaces[triIndex];
+    let p0 = attributes[face.x].position.xyz;
+    let p1 = attributes[face.y].position.xyz;
+    let p2 = attributes[face.z].position.xyz;
 
-        let dist = length(toLight);
-        // skip degenerate/very-close lights
-        if (dist <= 1e-6) { continue; }
-        let wi = normalize(toLight);
+    // triangle edges, normal and area
+    let e0 = p1 - p0;
+    let e1 = p2 - p0;
+    let triN = normalize(cross(e0, e1));
+    let area = 0.5 * length(cross(e0, e1));
+    if (area <= 1e-12) { return sum; } // degenerate triangle
 
-        // Cosine on light side: how much the patch faces the point
-        let cosL = max(dot(normal, -wi), 0.0);
-        if (cosL <= 0.0) { continue; }
-
-        // Cosine on surface side
-        let cosS = max(dot(Nsurf, wi), 0.0);
-        if (cosS <= 0.0) { continue; }
-
-        var shadow_tmax = max(dist - 1.0, 1.0);
-        var shadow = Ray((*hit).position, wi, 1.0, shadow_tmax);
-        var shHit: HitInfo;
-        if (intersect_scene(&shadow, &shHit)) { continue; }
-
-        let mid = meshFaces[triIndex].w;
-        var Le = vec3f(0.0);
-        if (mid < arrayLength(&materials)) {
-            Le = materials[mid].emission.xyz;
-        }
-
-        // Radiometric approx: irradiance contribution ~ Le * (area * cosL) / dist^2
-        // Reflected radiance for Lambertian: (Rd / pi) * E * cosS
-        let E = Le * (area * cosL) / (dist * dist);
-        let brdf = (*hit).diffuse / 3.14159;
-        let contrib = brdf * E * cosS;
-        sum = sum + contrib;
+    // 2) sample a point on the triangle using uniform barycentric sampling
+    var r1 = rnd(seed);
+    var r2 = rnd(seed);
+    // warp to barycentric coordinates, ensure (u+v)<=1
+    if (r1 + r2 > 1.0) {
+        r1 = 1.0 - r1;
+        r2 = 1.0 - r2;
     }
+    let sampleP = p0 + e0 * r1 + e1 * r2;
+
+    // geometry from hit point to sampled point
+    let toLight = sampleP - (*hit).position;
+    let dist = length(toLight);
+    if (dist <= 1e-6) { return sum; }
+    let wi = normalize(toLight);
+
+    // cosines
+    let cosL = max(dot(triN, -wi), 0.0); // triangle's cosine towards point
+    if (cosL <= 0.0) { return sum; }
+    let cosS = max(dot(Nsurf, wi), 0.0);
+    if (cosS <= 0.0) { return sum; }
+
+    // visibility (shadow) test
+    var shadow_tmax = max(dist - eps, eps);
+    var shadow = Ray((*hit).position + Nsurf * eps, wi, eps, shadow_tmax);
+    var shHit: HitInfo;
+    if (intersect_scene(&shadow, &shHit)) { return sum; }
+
+    // emitted radiance from material
+    let mid = face.w;
+    var Le = vec3f(0.0);
+    if (mid < arrayLength(&materials)) {
+        Le = materials[mid].emission.xyz;
+    }
+
+    // pdf: we chose triangle uniformly among nLights and point uniformly over triangle area
+    // pdf(x) = 1/(nLights * area)
+    let pdf = 1.0 / (f32(nLights) * area);
+
+    // incoming radiance from the sampled point: Le * cosL / dist^2
+    // reflected contribution (Lambertian): brdf * Li * cosS
+    let brdf = (*hit).diffuse / 3.14159;
+    // Monte Carlo estimator: (brdf * Le * cosL * cosS) / (dist^2 * pdf)
+    let contrib = brdf * Le * cosL * cosS / (dist * dist * pdf);
+
+    sum = sum + contrib;
     return sum;
 }
-// Shade functions
-fn area_lights(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3f {
-    // Include the surface emission so emissive triangles render as light sources
-    // even when shading themselves. sample_area_lights returns only the
-    // reflected contribution from other emissive triangles.
-    return (*hit).emission + sample_area_lights(r, hit);
+// All shading entry points accept a seed pointer now (they can ignore it if unused)
+fn area_lights(r: ptr<function, Ray>, hit: ptr<function, HitInfo>, seed: ptr<function, u32>) -> vec3f {
+    return (*hit).emission + sample_area_lights(r, hit, seed);
 }
-fn directional_light(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3f {
+fn directional_light(r: ptr<function, Ray>, hit: ptr<function, HitInfo>, seed: ptr<function, u32>) -> vec3f {
     let pi = 3.14159;
     let intensity = vec3f(pi);
     let dir = -normalize(vec3f(-1.0, -1.0, -1.0));
@@ -366,7 +379,7 @@ fn directional_light(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3
 
     return Lr;
 }
-fn lambertian(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3f {
+fn lambertian(r: ptr<function, Ray>, hit: ptr<function, HitInfo>, seed: ptr<function, u32>) -> vec3f {
     let light = sample_point_light((*hit).position);
     let eps = 0.1;
     let N = normalize((*hit).normal);
@@ -388,17 +401,15 @@ fn lambertian(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3f {
     ) * Li * nwi;
     return Lr;
 }
-fn mirror(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3f {
-
+fn mirror(r: ptr<function, Ray>, hit: ptr<function, HitInfo>, seed: ptr<function, u32>) -> vec3f {
     (*hit).has_hit = false;
     (*r).direction = normalize(reflect(normalize((*r).direction), normalize((*hit).normal)));
     (*r).origin = (*hit).position;
     (*r).tmin = 1.0;
     (*r).tmax = 1e9;
-
     return vec3f(0.0);
 }
-fn refract_shader(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3f {
+fn refract_shader(r: ptr<function, Ray>, hit: ptr<function, HitInfo>, seed: ptr<function, u32>) -> vec3f {
     let d = (*r).direction;
     let n = (*hit).normal;
     let n_air = 1.0;
@@ -418,7 +429,7 @@ fn refract_shader(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3f {
     
     return vec3f(0.0);
 }
-fn phong(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3f {
+fn phong(r: ptr<function, Ray>, hit: ptr<function, HitInfo>, seed: ptr<function, u32>) -> vec3f {
     let light = sample_point_light((*hit).position);
     let N = normalize((*hit).normal);
     let V = normalize(-(*r).direction);
@@ -436,24 +447,26 @@ fn phong(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3f {
     let Lr = ((*hit).emission + diffuse + specular) * Li * nwi;
     return Lr;
 }
-fn glossy(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3f {
-    let phong_shading = phong(r, hit);
-    let refract_shading = refract_shader(r, hit);
+
+fn glossy(r: ptr<function, Ray>, hit: ptr<function, HitInfo>, seed: ptr<function, u32>) -> vec3f {
+    let phong_shading = phong(r, hit, seed);
+    let refract_shading = refract_shader(r, hit, seed);
     return phong_shading + refract_shading;
 }
-fn shade(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3f { 
+
+// Shade dispatcher now accepts and forwards the RNG seed pointer
+fn shade(r: ptr<function, Ray>, hit: ptr<function, HitInfo>, seed: ptr<function, u32>) -> vec3f { 
     switch hit.shader { 
         case 0: { return (*hit).color; }
-        case 1: { return directional_light(r, hit); }
-        case 2: { return lambertian(r, hit); } 
-        case 3: { return area_lights(r, hit); } 
-        case 4: { return mirror(r, hit); } 
-        case 5: { return refract_shader(r, hit); }
-        case 6: { return phong(r, hit); }
-        case 7: { return glossy(r, hit); }
+        case 1: { return directional_light(r, hit, seed); }
+        case 2: { return lambertian(r, hit, seed); } 
+        case 3: { return area_lights(r, hit, seed); } 
+        case 4: { return mirror(r, hit, seed); } 
+        case 5: { return refract_shader(r, hit, seed); }
+        case 6: { return phong(r, hit, seed); }
+        case 7: { return glossy(r, hit, seed); }
         case default { return vec3f(0.0); } 
     } 
-    
 }
 
 // Texture look-up
@@ -591,7 +604,7 @@ fn main_fs(@builtin(position) fragcoord: vec4f, @location(0) coords: vec2f) -> F
         var sample_result = vec3f(0.0);
         var hit: HitInfo;
         for (var i = 0; i < max_depth; i = i + 1) {
-            if (intersect_scene(&r, &hit)) { sample_result += shade(&r, &hit); }
+            if (intersect_scene(&r, &hit)) { sample_result += shade(&r, &hit, &t); }
             else { sample_result += bgcolor.rgb; break; }
             if (hit.has_hit && !hit.continue_path) { break; }
         }
