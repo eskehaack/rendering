@@ -1,19 +1,35 @@
 "use strict";
 window.onload = function() { main(); }
 
-async function render(device, context, pipeline, bindGroup, timingHelper, gpuTime) {
+async function render(device, context, pipeline, bindGroup, timingHelper, gpuTime, textures) {
     const encoder = device.createCommandEncoder();
     const pass = timingHelper.beginRenderPass(encoder, {
-        colorAttachments: [{
-            view: context.getCurrentTexture().createView(),
-            loadOp: "clear",
-            storeOp: "store",
-        }]
+        colorAttachments: [
+            {
+                view: context.getCurrentTexture().createView(),
+                loadOp: "clear",
+                storeOp: "store",
+                clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 },
+            },
+            {
+                view: textures.renderSrc.createView(),
+                loadOp: "load",
+                storeOp: "store",
+                clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 },
+            }
+        ]
     });
     pass.setPipeline(pipeline);
     pass.setBindGroup(0, bindGroup);
     pass.draw(4);
     pass.end();
+
+    encoder.copyTextureToTexture(
+        { texture: textures.renderSrc }, 
+        { texture: textures.renderDst }, 
+        [textures.width, textures.height]
+    );
+
     device.queue.submit([encoder.finish()]);
     const time = await timingHelper.getResult();
     gpuTime = time / 1000;
@@ -42,13 +58,17 @@ function compute_jitters(jitter, pixelsize, subdivs) {
     const step = pixelsize/subdivs; 
     if(subdivs < 2) { 
         jitter[0] = 0.0; 
-        jitter[1] = 0.0; 
+        jitter[1] = 0.0;
+        jitter[2] = 0.0;
+        jitter[3] = 0.0;
     } else { 
         for(var i = 0; i < subdivs; ++i) {
             for(var j = 0; j < subdivs; ++j) { 
-                const idx = (i*subdivs + j)*2; 
+                const idx = (i*subdivs + j)*4; // 4 floats per padded vec4
                 jitter[idx] = (Math.random() + j)*step - pixelsize*0.5; 
                 jitter[idx + 1] = (Math.random() + i)*step - pixelsize*0.5; 
+                jitter[idx + 2] = 0.0;
+                jitter[idx + 3] = 0.0;
             }
         }
     }
@@ -81,6 +101,31 @@ async function main(){
     const wgsl = device.createShaderModule({
         code: wgslcode
     });
+
+    let textures = new Object();
+    textures.width = canvas.width;
+    textures.height = canvas.height;
+    textures.renderSrc = device.createTexture({
+        size: [canvas.width, canvas.height],
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
+        format: 'rgba32float',
+    });
+    textures.renderDst = device.createTexture({
+        size: [canvas.width, canvas.height],
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
+        format: 'rgba32float',
+    });
+    const enc = device.createCommandEncoder();
+    const pass = enc.beginRenderPass({
+        colorAttachments: [{
+            view: textures.renderDst.createView(),
+            loadOp: 'clear',
+            clearValue: [0.0, 0.0, 0.0, 0.0],
+            storeOp: 'store',
+        }]
+    });
+    pass.end();
+    device.queue.submit([enc.finish()]);
 
     // import obj file
     const obj_filename = '../../helper_functions/objects/CornellBox.obj';
@@ -122,20 +167,15 @@ async function main(){
         layout: 'auto',
         vertex: { module: wgsl, entryPoint: 'main_vs', },
         fragment: {
-        module: wgsl,
-        entryPoint: 'main_fs',
-        targets: [{ format: canvasFormat }], },
+            module: wgsl,
+            entryPoint: 'main_fs',
+            targets: [{ format: canvasFormat }, { format: "rgba32float" }]
+        },
         primitive: { topology: 'triangle-strip', },
     });
 
-    let bytelength = 7*sizeof['vec4']; // Buffers are allocated in vec4 chunks
-    let uniforms = new ArrayBuffer(bytelength);
-    const uniformBuffer = device.createBuffer({
-        size: uniforms.byteLength,
-        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    });
-
-    let jitter = new Float32Array(200); // allowing subdivs from 1 to 10 
+    const MAX_JITTERS = 100; // 100 vec2 -> padded to 100 vec4
+    let jitter = new Float32Array(MAX_JITTERS * 4); // xy = jitter, zw = padding
     const jitterBuffer = device.createBuffer({ 
         size: jitter.byteLength, 
         usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE 
@@ -145,14 +185,29 @@ async function main(){
     window.antiAlias = {
         subdiv: parseInt(subdivSeletor.value),
     }
+    // compute initial jitters and upload so shader has them on first frame
+    compute_jitters(jitter, pixelSize, window.antiAlias.subdiv);
+
     subdivSeletor.addEventListener('change', () => {
         window.antiAlias.subdiv = parseInt(subdivSeletor.value);
         compute_jitters(jitter, pixelSize, window.antiAlias.subdiv);
         let f32 = new Float32Array(uniforms);
         f32[25] = window.antiAlias.subdiv;
+        if (window.antiAlias.subdiv <= 0) {
+            f32[25] = 1; // avoid zero subdivs in the shader
+        } else {
+            f32[15] = window.antiAlias.subdiv * window.antiAlias.subdiv; // no_of_jitters
+        }
+        new Float32Array(uniforms, 7 * sizeof['vec4'], jitter.length).set(jitter);
         device.queue.writeBuffer(uniformBuffer, 0, uniforms);
-        device.queue.writeBuffer(jitterBuffer, 0, jitter);
         requestAnimationFrame(animate);
+    });
+
+    let bytelength = 7*sizeof['vec4'] + jitter.byteLength; // Buffers are allocated in vec4 chunks
+    let uniforms = new ArrayBuffer(bytelength);
+    const uniformBuffer = device.createBuffer({
+        size: uniforms.byteLength,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
     const bindGroup = device.createBindGroup({
@@ -164,7 +219,7 @@ async function main(){
             },
             { 
                 binding: 1,  
-                resource: { buffer: jitterBuffer}
+                resource: textures.renderDst.createView()
             },
             {
                 binding: 2,
@@ -206,6 +261,7 @@ async function main(){
     const filterSelect = document.getElementById('filtering-select');
     const textureEnable = document.getElementById('texture-enable');
     const textureScaleInput = document.getElementById('texture-scale-input');
+    const progCheckbox = document.getElementById('progressive-enable');
     window.selectedOptions = {
         matt: parseInt(mattSelect.value),
         repeat: parseInt(repeatSelect.value),
@@ -233,6 +289,33 @@ async function main(){
         window.selectedOptions.textureScale = parseFloat(textureScaleInput.value);
         if(window.updateOptions) window.updateOptions();
     });
+    progCheckbox.addEventListener('change', async () => {
+        // patch the progressive flag (float slot index 27)
+        let f32 = new Float32Array(uniforms);
+        f32[27] = progCheckbox.checked ? 1.0 : 0.0;
+
+        // reset frame counter to 0 so accumulation restarts cleanly
+        let u32 = new Uint32Array(uniforms);
+        u32[11] = 0;
+
+        // upload uniforms update
+        device.queue.writeBuffer(uniformBuffer, 0, uniforms);
+
+        // clear the accumulation texture (renderDst) so we start from zeros
+        const enc = device.createCommandEncoder();
+        const clearPass = enc.beginRenderPass({
+            colorAttachments: [{
+                view: textures.renderDst.createView(),
+                loadOp: 'clear',
+                clearValue: [0.0, 0.0, 0.0, 0.0],
+                storeOp: 'store',
+            }]
+        });
+        clearPass.end();
+        device.queue.submit([enc.finish()]);
+
+        requestAnimationFrame(animate);
+    });
 
     // calculate basis vectors
     const eye = vec3(277.0, 275.0, -570.0);
@@ -247,21 +330,25 @@ async function main(){
     const aspect = canvas.width/canvas.height;
     var cam_const = 1.0;
     var gamma = 2.4;
+    var frame = 0;
+    var no_of_jitters = window.antiAlias.subdiv * window.antiAlias.subdiv;
     var matt_shader = window.selectedOptions ? window.selectedOptions.matt : 0;
     var repeat_selector = window.selectedOptions ? window.selectedOptions.repeat : 0;
     var filter_selector = window.selectedOptions ? window.selectedOptions.filter : 0;
     var texture_enable = window.selectedOptions ? window.selectedOptions.texture : 1;
     var subdivs = window.antiAlias ? window.antiAlias.subdiv : 1;
     var textureScale = window.selectedOptions ? window.selectedOptions.textureScale : 1;
+    var progressive = progCheckbox.checked ? 1.0 : 0.0;
     new Float32Array(uniforms, 0, 28).set([
-        aspect, cam_const, gamma, 0.0, 
-        ...eye, 0.0,
-        ...v, 0.0,
-        ...b1, 0.0,
+        aspect, cam_const, textures.width, textures.height,
+        ...eye, gamma,
+        ...v, frame,
+        ...b1, no_of_jitters,
         ...b2, 0.0,
         matt_shader, repeat_selector, filter_selector, 0.0, 
-        texture_enable, subdivs, textureScale, 0.0
+        texture_enable, subdivs, textureScale, progressive
     ]);
+    new Float32Array(uniforms, 7 * sizeof['vec4'], jitter.length).set(jitter);
 
     window.updateOptions = function() {
         matt_shader = window.selectedOptions.matt;
@@ -278,24 +365,27 @@ async function main(){
         f32[25] = subdivs;
         f32[26] = textureScale;
         device.queue.writeBuffer(uniformBuffer, 0, uniforms);
-        device.queue.writeBuffer(jitterBuffer, 0, jitter);
         requestAnimationFrame(animate);
     }
-
-    device.queue.writeBuffer(uniformBuffer, 0, uniforms)
-    addEventListener("wheel", (event) => {
-        gamma *= 1.0 + 2.5e-4*event.deltaY;
-        new Float32Array(uniforms, 8, 1).set([gamma]);
-        requestAnimationFrame(animate);
-    });
+    // helper to increment the frame counter stored at element index 11
+    function bumpFrameAndUpload(device, uniformBuffer, uniforms) {
+        // uniforms is the ArrayBuffer used earlier with Float32Array(...).set([...])
+        const u32 = new Uint32Array(uniforms);
+        u32[11] = (u32[11] || 0) + 1; // increment frame (stored as u32 in the shader)
+        console.log("Frame:", u32[11]);
+        device.queue.writeBuffer(uniformBuffer, 0, uniforms);
+    };
+    device.queue.writeBuffer(uniformBuffer, 0, uniforms);
     async function animate() {
         device.queue.writeBuffer(uniformBuffer, 0, uniforms);
-        device.queue.writeBuffer(jitterBuffer, 0, jitter);
         (async () => {
-            gpuTime = await render(device, context, pipeline, bindGroup, timingHelper, gpuTime);
+            gpuTime = await render(device, context, pipeline, bindGroup, timingHelper, gpuTime, textures);
             document.getElementById("stats").value = `Rendering time: ${gpuTime.toFixed(2)} μs`;
         })();
+        bumpFrameAndUpload(device, uniformBuffer, uniforms);
+        if (progCheckbox.checked) {
+            requestAnimationFrame(animate);
+        }
     }
-    requestAnimationFrame(animate);
     animate();
 }

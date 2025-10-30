@@ -5,24 +5,22 @@ struct VSOut {
     @builtin(position) position: vec4f,
     @location(0) coords : vec2f,
 };
+// For fragment shader output (ping-pong buffers)
+struct FSOut {
+    @location(0) frame: vec4f,
+    @location(1) accum: vec4f,
+};
 // For JS variables
+const MAX_JITTER = 100u; // must match JS padded count (100 vec4 entries)
 struct Uniforms {
-    aspect: f32,
-    cam_const: f32,
-    gamma: f32,
-    _pad0: f32,
-    eye: vec3f, _pad1: f32,
-    v: vec3f, _pad2: f32,
-    b1: vec3f, _pad3: f32,
+    aspect: f32, cam_const: f32, width: u32, height: u32,
+    eye: vec3f, gamma: f32,
+    v: vec3f, frame: u32,
+    b1: vec3f, no_of_jitters: u32,
     b2: vec3f, _pad4: f32,
-    matt_shader: f32,
-    repeat_selector: f32,
-    filter_selector: f32,
-    _pad5: f32,
-    texture_enable: f32,
-    subdivs: f32,
-    texture_scale: f32,
-    _pad7: f32,
+    matt_shader: f32, repeat_selector: f32, filter_selector: f32, _pad5: f32,
+    texture_enable: f32, subdivs: f32, texture_scale: f32, progressive: u32,
+    jitter: array<vec4<f32>, MAX_JITTER>,
 };
 // For storing coordinate info
 struct HitInfo { 
@@ -72,7 +70,7 @@ struct Attribs {
 
 // Bindings from JS
 @group(0) @binding(0) var<uniform> uniforms : Uniforms;
-@group(0) @binding(1) var<storage> jitter: array<vec2f>;
+@group(0) @binding(1) var renderTexture: texture_2d<f32>;
 @group(0) @binding(2) var<storage> attributes: array<Attribs>;
 @group(0) @binding(3) var<storage> meshFaces: array<vec4u>; // v0,v1,v2,mat
 @group(0) @binding(4) var<uniform> aabb : Aabb;
@@ -520,7 +518,7 @@ fn texture_switch(texture: texture_2d<f32>, texcoords: vec2f) -> vec3f {
 }
 
 // Initialize ray tracing
-fn trace_rays(ipcoords: vec2f, uniforms: Uniforms) -> Ray {
+fn trace_rays(ipcoords: vec2f) -> Ray {
     let xip = ipcoords.x * uniforms.aspect * 0.5f;
     let yip = ipcoords.y * 0.5f;
 
@@ -539,6 +537,28 @@ fn trace_rays(ipcoords: vec2f, uniforms: Uniforms) -> Ray {
     );
 }
 
+// PRNG xorshift seed generator by NVIDIA
+fn tea(val0: u32, val1: u32) -> u32 {
+    const N = 16u; // User specified number of iterations
+    var v0 = val0; var v1 = val1; var s0 = 0u;
+    for(var n = 0u; n < N; n++) {
+        s0 += 0x9e3779b9;
+        v0 += ((v1<<4)+0xa341316c)^(v1+s0)^((v1>>5)+0xc8013ea4);
+        v1 += ((v0<<4)+0xad90777d)^(v0+s0)^((v0>>5)+0x7e95761e);
+    }
+    return v0;
+}
+// Generate random unsigned int in [0, 2^31)
+fn mcg31(prev: ptr<function, u32>) -> u32 {
+    const LCG_A = 1977654935u; // Multiplier from Hui-Ching Tang [EJOR 2007]
+    *prev = (LCG_A * (*prev)) & 0x7FFFFFFF;
+    return *prev;
+}
+// Generate random float in [0, 1)
+fn rnd(prev: ptr<function, u32>) -> f32 {
+    return f32(mcg31(prev)) / f32(0x80000000);
+}
+
 @vertex
 fn main_vs(@builtin(vertex_index) VertexIndex : u32) -> VSOut {
     const pos = array<vec2f, 4>(vec2f(-1.0, 1.0), vec2f(-1.0, -1.0), vec2f(1.0, 1.0), vec2f(1.0, -1.0));
@@ -550,7 +570,11 @@ fn main_vs(@builtin(vertex_index) VertexIndex : u32) -> VSOut {
 
 
 @fragment
-fn main_fs(@location(0) coords: vec2f) -> @location(0) vec4f {
+fn main_fs(@builtin(position) fragcoord: vec4f, @location(0) coords: vec2f) -> FSOut {
+    let launch_idx = u32(fragcoord.y)*uniforms.width + u32(fragcoord.x);
+    var t = tea(launch_idx, uniforms.frame);
+    let prog_jitter = vec2f(rnd(&t), rnd(&t))/(f32(uniforms.height)*sqrt(f32(uniforms.no_of_jitters)));
+
     const bgcolor = vec4f(0.1, 0.3, 0.6, 1.0);
     const max_depth = 10;
     var result = vec3f(0.0);
@@ -558,10 +582,10 @@ fn main_fs(@location(0) coords: vec2f) -> @location(0) vec4f {
     if (n_samples < 1) { n_samples = 1; }
     for (var s = 0; s < n_samples; s = s + 1) {
         // Get jitter offset for this sample
-        let jitter_offset = jitter[s]; // vec2f
+        let jitter_offset = uniforms.jitter[s].xy; // vec2f
         // Apply jitter to pixel coordinates
-        let jittered_coords = coords + jitter_offset;
-        var r = trace_rays(jittered_coords, uniforms);
+        let jittered_coords = coords + jitter_offset + prog_jitter;
+        var r = trace_rays(jittered_coords);
         var sample_result = vec3f(0.0);
         var hit: HitInfo;
         for (var i = 0; i < max_depth; i = i + 1) {
@@ -572,5 +596,20 @@ fn main_fs(@location(0) coords: vec2f) -> @location(0) vec4f {
         result += sample_result;
     }
     result = result / f32(n_samples);
-    return vec4f(pow(result, vec3f(1.0/uniforms.gamma)), bgcolor.a);
+    
+
+    var fsOut: FSOut;
+    // If progressive accumulation is disabled, just use current result (no averaging)
+    if (uniforms.progressive == 0u) {
+        fsOut.frame = vec4f(pow(result, vec3f(1.0/uniforms.gamma)), bgcolor.a);
+        fsOut.accum = vec4f(result, 1.0);
+        return fsOut;
+    } else {
+        // Progressive update of image
+        let curr_sum = textureLoad(renderTexture, vec2u(fragcoord.xy), 0).rgb*f32(uniforms.frame);
+        let accum_color = (result + curr_sum)/f32(uniforms.frame + 1u);
+        fsOut.frame = vec4f(pow(accum_color, vec3f(1.0/uniforms.gamma)), bgcolor.a);
+        fsOut.accum = vec4f(accum_color, 1.0);
+        return fsOut;
+    }
 }

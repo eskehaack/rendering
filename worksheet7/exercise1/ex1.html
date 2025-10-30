@@ -35,10 +35,12 @@
                     <option value="0">Nearest</option>
                     <option value="1" selected="selected" >Linear</option>
                 </select>
+                <label for="progressive-enable">Enable progressive accumulation:</label>
+                <input type="checkbox" id="progressive-enable" checked>
                 <label for="texture-enable">Enable Plane Texture:</label>
                 <input type="checkbox" id="texture-enable" checked>
                 <label for="subdiv-selector">Subdivisions:</label>
-                <input type="range" id="subdiv-selector" min="0" max="10" value="0" />
+                <input type="range" id="subdiv-selector" min="0" max="10" value="2" />
                 <label for="texture-scale-input">Texture Scale:</label>
                 <input type="range" id="texture-scale-input" min="0.01" max="1" step="0.01" value="0.01" />
             </div>
