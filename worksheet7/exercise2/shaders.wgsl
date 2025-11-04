@@ -381,7 +381,7 @@ fn directional_light(r: ptr<function, Ray>, hit: ptr<function, HitInfo>, seed: p
 }
 fn lambertian(r: ptr<function, Ray>, hit: ptr<function, HitInfo>, seed: ptr<function, u32>) -> vec3f {
     let light = sample_point_light((*hit).position);
-    let eps = 0.1;
+    let eps = 1e-4;
     let N = normalize((*hit).normal);
     var shadow_origin = (*hit).position + N * eps;
     var shadow = Ray(shadow_origin, light.w_i, eps, max(light.dist - eps, eps));
@@ -405,7 +405,7 @@ fn mirror(r: ptr<function, Ray>, hit: ptr<function, HitInfo>, seed: ptr<function
     (*hit).has_hit = false;
     (*r).direction = normalize(reflect(normalize((*r).direction), normalize((*hit).normal)));
     (*r).origin = (*hit).position;
-    (*r).tmin = 1.0;
+    (*r).tmin = 1e-2;
     (*r).tmax = 1e9;
     return vec3f(0.0);
 }
@@ -423,7 +423,7 @@ fn refract_shader(r: ptr<function, Ray>, hit: ptr<function, HitInfo>, seed: ptr<
     let refracted = normalize(refract(d, N, eta));
     (*r).direction = refracted;
     (*r).origin = (*hit).position + refracted * 1e-4;
-    (*r).tmin = 0.1;
+    (*r).tmin = 1e-2;
     (*r).tmax = 1e9;
     (*hit).has_hit = false;
     
