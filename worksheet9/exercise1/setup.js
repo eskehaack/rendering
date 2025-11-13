@@ -335,7 +335,7 @@ async function main(){
     
     const aspect = canvas.width/canvas.height;
     var cam_const = 1.0;
-    var gamma = 2.25;
+    var gamma = 1.5;
     var frame = 0;
     var no_of_jitters = window.antiAlias.subdiv * window.antiAlias.subdiv;
     var matt_shader = window.selectedOptions ? window.selectedOptions.matt : 0;
