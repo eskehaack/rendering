@@ -782,6 +782,7 @@ fn main_fs(@builtin(position) fragcoord: vec4f, @location(0) coords: vec2f) -> F
                 t_holdout = -r.origin.y / r.direction.y;
             }
 
+            let ts = vec2f(r.tmin, r.tmax);
             if (intersect_scene(&r, &hit)) {
 
                 let local = shade(&r, &hit, &t);
@@ -798,7 +799,7 @@ fn main_fs(@builtin(position) fragcoord: vec4f, @location(0) coords: vec2f) -> F
                 break;
             } else {
                 // Holdout plane
-                if (t_holdout > r.tmin && t_holdout < r.tmax) {
+                if (t_holdout > ts.x && t_holdout < ts.y) {
                     hit.position = r.origin + r.direction * t_holdout;
                     hit.normal = vec3f(0.0, 1.0, 0.0);
                     let occ = holdout_occlusion(&r, &hit, &t);
