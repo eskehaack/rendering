@@ -124,7 +124,7 @@ fn sample_environment(dir: vec3f) -> vec3f {
     let scale = max(uniforms.texture_scale, 1e-6);
     var scaled = center + (uv - center) * scale;
     // flip vertical
-    let final_uv = vec2f(scaled.x, scaled.y);
+    let final_uv = vec2f(scaled.x, scaled.y - 0.05);
     return texture_switch(texture, final_uv);
 }
 // Intersection functions
