@@ -1,0 +1,65 @@
+\documentclass[a4paper, 12pt]{olplainarticle}
+% Use option lineno for line numbers
+
+\title{02562 Exam Project - Procedural solid texturing}
+
+\author[1]{Eske Haack - s214643}
+
+\keywords{Procedural texturing, Blender, Rendering}
+
+\begin{abstract}
+
+\end{abstract}
+
+\begin{document} 
+
+\flushbottom
+\maketitle 
+\thispagestyle{empty} 
+
+\section{Introduction}
+
+\section{Method}
+
+\section{Implementation}
+This project will feature three different procedural textures 
+
+\subsection{Marble}
+
+
+\subsection{Wood}
+Equation for the wooden texture:
+
+$$
+    C_{\text{wood}} = 
+    \text{CR}(\sin(||\mathbf{p_{x,y}} \cdot \mathbf{t_{x,y}}|| + \text{fBm}(\mathbf{p_{x,y, z}}))) + 
+    \text{CR}(\text{fBm}(\mathbf{p_{x,y, z}} \cdot \mathbf{t_{x,y, z}})) 
+$$
+
+Now, let's break this down for a better understanding. We will start out with the part creating the rings of the wood:
+$||\mathbf{p_{x,y}} \cdot \mathbf{t_{x,y}}||$. We use $p_{x,y}$ to describe a normalized position of a given pixel in the objects bounding box.
+The other component, $t_{x,y}$ is a translation, that allows us to move, and possibly, strech the texture on the object. 
+Calculating the norm of that sum gives us a 2D parabolar shape with a minimum in the center of the object.
+By applying a sine function to that, we get the ring structure typical for wood. Then what is the purpose of the fBm function?
+The fractal Brownian motion (fBm) function is a noise function which creates a natural random variation in the parabolar tarain, and thus also in the rings.
+This allows us to simulate a more realistic wood ring structure that does not follow a perfect mathematical pattern.
+
+The second part of the equation: $\text{fBm}(\mathbf{p_{x,y, z}} \cdot \mathbf{t_{x,y, z}})$ adds a grain to the wood texture.
+Similar to the ring structure, we use the coordinates of the pixel in the bounding box and a translation to sample from the fBm noise.
+It is important to note that the translation in this case is used to stretch the texture along the x and y axis, while leaving the z axis untouched.
+This is done to ensure that the grain follows a clear direction as wood grains do.
+
+Finally, both parts a fed through a color ramp function, which maps scalar values to colors using the following scheme:
+
+$$ C_{\text{out}} = (1-g)C_0 + gC_1 $$
+
+Where $C_0$ and $C_1$ are the two colors in the color ramp and $g$ is the input factor.
+
+The color ramp, for both cases is set to alternate a light brown and a dark brown color to simulate real wood.
+
+
+\section{Results}
+
+\section{Discussion}
+
+\end{document}
