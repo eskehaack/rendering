@@ -7,17 +7,21 @@
 
 \keywords{Procedural texturing, Blender, Rendering}
 
-\begin{abstract}
-
-\end{abstract}
-
 \begin{document} 
 
 \flushbottom
 \maketitle 
-\thispagestyle{empty} 
 
 \section{Introduction}
+In the present past, animation and computer graphics have become ever more relevant an popular subjects. 
+Every child have seen at least a dozen of Disney's animation movies. Teenagers all over the world have played the latest in graphical video games.
+Each media ever pushing the boundaries of what is possible on the digital screen. Each making the virtual worlds ever more realistic and fantastic.
+But pushing the realism comes at a cost, each element of the graphics have to be ever more detailed to fool the eye. 
+Each wall, each rock, each trinket has to be created using realistic textures and models. Overlaying each object with real-life scans or photos of actual objects would cause an abundance of issues, both in loading time and permutations.
+Instead we must define textures using vector representations and mathematical expressions, too make easily accessible textures for any object.
+
+In this project I will go through the basics of procedural textures and how to make them. 
+For this I will be using the tool; Blender, and a learning by doing strategy to implement various shader techniques, showcasing simple implementations.
 
 \section{Method}
 Creating procedural textures in Blender is a creative process. There is no how-to or factual reasoning that will get you there. 
@@ -195,10 +199,35 @@ Of course, lava usually doesn't clump into a ball like it is in the image, but m
 \end{figure}
 
 \section{Discussion}
+Procedural texturing is not a perfect technique and it certainly comes with some downsides. 
+One of the biggest downsides is the process of creating the texture. It is a manual process, and requires a fair amount of trial and error before reaching an acceptable product.
+Of course, with training, this process will become easier, but humans actively imitating nature will never yield a perfect result. 
+This is seen as one of the main downfalls of the marble texture in \autoref{fig:marble}. It comes close to the real version of marble, but looking closely it is obvious that it is man made.
+We also see it in the wood texture (\autoref{fig:wood}) where the planks are too clean cut and straight.
 
+Looking further at the rendered textures we notice some other shortcomings. The lava-textures bunny is an obvious one. It represents how certain textures with certain objects create unnatural looking renders due to the automatically generated surfaces.
+In the end, this is of course an avoidable problem, as we shouldn't design displaced textures for object with predisposed textures, like the bunny. 
+It limits the displaced textures to objects with mostly convex shapes like the icosphere or the elephant.
 
-\newpage
+Lastly, we should address what might be the elephant in the room (not the one in \autoref{fig:lava_elephant}). 
+Adding complexity to the textures significantly increases the processing time of the render process. 
+In this project the marble and wood textures took mere minutes to render, while the lava texture took almost an hour. 
+While loading an image of lava might take more memory it would be faster to map that to the objects. 
+This of course creates a bunch of other issues with realism, but it could be a helpful alternative in certain examples.
+
+In conclusion, building textures with a tool like Blender is a powerful way of creating pseudo-realistic object surfaces. 
+With relatively little experience and time one can make something that is believable and useful. 
+On the other the other hand creating the level of hyper-realism often used in movies and games is a time consuming process and might end up being heavy on processing time.
+
 \bibliography{sample}
+
+\section{GenAI Usage}
+In this project and the attached exercises GenAI has been used as an inspirational tool as well as an error searcher and debugger.
+For the project the main usage has been to understand nodes and features in Blender. No text or content has been generated with GenAI.
+
+In the weekly exercises GenAI has been used to understand WGSL and javascript functions (including making comments for the code to increase understanding). 
+Some lesser parts of the functional code has been generated using GenAI tools to help with inspiration and understanding of features and implementations.
+Additionally the style sheet (.css file) has been generated exclusively using GenAI.
 
 \newpage
 \appendix

@@ -161,26 +161,32 @@ THE ABSTRACT\vskip12pt}\let\go\relax\fi
 \vskip18pt%
 {%
 \noindent
-{\parbox{\dimexpr\linewidth-2\fboxsep\relax}{\color{color1}\large\sffamily\textbf{ABSTRACT}}}
+% Only show ABSTRACT header and box if \theabstract is defined
+\@ifundefined{theabstract}{}{%
+  {\parbox{\dimexpr\linewidth-2\fboxsep\relax}{\color{color1}\large\sffamily\textbf{ABSTRACT}}}%
+  \vskip10pt\nolinenumbers
+  {%
+  \noindent
+  {\colorbox{color2}{%
+  \parbox{\dimexpr\linewidth-2\fboxsep\relax}{%
+  \sffamily\small\vskip1ex\if@reqslineno\internallinenumbers\fi\theabstract
+  }%
+  } }%
+  \vskip18pt%
 }%
-\vskip10pt\nolinenumbers
-{%
 \noindent
-\colorbox{color2}{%
-\parbox{\dimexpr\linewidth-2\fboxsep\relax}{%
-\sffamily\small\vskip1ex\if@reqslineno\internallinenumbers\fi\theabstract
-}%
-}%
-\vskip18pt%
-\noindent
+% Only show keywords box if \@keywords was set
+\@ifundefined{@keywords}{}{%
 \parbox{\dimexpr\linewidth-2\fboxsep\relax}{%
 \if@reqslineno\internallinenumbers\fi%
 {\color{color1}\keywordname\hspace*{1em}} \@keywords%
 }%
-}%
 \vskip25pt%
 }%
-}%
+}% end group for top title parts
+}% end \renewcommand
+}
+}
 %-----------------------------------------------
 \setlength{\columnsep}{0.55cm} % Distance between the two columns of text
 \setlength{\fboxrule}{0.75pt} % Width of the border around the abstract
