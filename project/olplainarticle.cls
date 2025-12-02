@@ -30,6 +30,7 @@
 \RequirePackage{authblk}
 
 \RequirePackage[hidelinks]{hyperref}
+\RequirePackage{url}
 \RequirePackage{cleveref}
 
 \RequirePackage[left=2cm,%
